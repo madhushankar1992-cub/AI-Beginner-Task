@@ -10,12 +10,13 @@ import logging
 import os
 
 import pandas as pd
-from groq import Groq
+from groq import Groq, RateLimitError
 from pydantic import ValidationError
 
 from src import config
 from src.api.models import RecommendationItem, RecommendationResponse
 from src.recommendation.prompts import build_system_prompt, build_user_message
+from src.recommendation.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,13 @@ def generate_recommendations(
     system_prompt = build_system_prompt()
     user_message = build_user_message(candidates, preferences, location, top_k=config.TOP_K)
 
+    limiter = get_rate_limiter()
+    estimated_tokens = limiter.estimate_tokens(system_prompt, user_message)
+    try:
+        limiter.check(estimated_tokens)
+    except RateLimitExceeded as exc:
+        raise EngineError(f"Skipped Groq call, local rate/token guard tripped: {exc}") from exc
+
     try:
         completion = client.chat.completions.create(
             model=config.MODEL_NAME,
@@ -85,8 +93,17 @@ def generate_recommendations(
             response_format={"type": "json_schema", "json_schema": RESPONSE_JSON_SCHEMA},
             timeout=config.LLM_TIMEOUT_SECONDS,
         )
+    except RateLimitError as exc:
+        retry_after = exc.response.headers.get("retry-after") if exc.response is not None else None
+        logger.warning("Groq rate limit hit (retry-after=%s): %s", retry_after, exc)
+        raise EngineError(f"Groq rate limit exceeded: {exc}") from exc
     except Exception as exc:
         raise EngineError(f"Groq API call failed: {exc}") from exc
+
+    if completion.usage is not None:
+        limiter.record(completion.usage.total_tokens)
+    else:
+        limiter.record(estimated_tokens)
 
     raw_content = completion.choices[0].message.content
     try:
