@@ -11,13 +11,13 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 **Goal:** Empty-but-runnable skeleton, no business logic yet.
 
 - Initialize repo structure per [architecture.md §6](architecture.md#6-suggested-project-structure) (`src/ingestion`, `src/api`, `src/recommendation`, `frontend`, `tests`, `data`, `docs`).
-- Set up Python environment (`requirements.txt` or `pyproject.toml`): `fastapi`, `uvicorn`, `pydantic`, `pandas`, `datasets`, `anthropic`, `pytest`.
-- Add `.env` / `.env.example` for `ANTHROPIC_API_KEY`; confirm secrets are gitignored.
+- Set up Python environment (`requirements.txt` or `pyproject.toml`): `fastapi`, `uvicorn`, `pydantic`, `pandas`, `datasets`, `groq`, `pytest`.
+- Add `.env` / `.env.example` for `GROQ_API_KEY`; confirm secrets are gitignored.
 - `git init`, initial commit, `.gitignore` (venv, `.env`, `data/*.parquet`, `node_modules`).
 - Stub `src/api/main.py` with a `GET /health` endpoint returning `200 OK`.
 
 **Deliverable:** `uvicorn src.api.main:app` runs; `/health` responds.
-**Acceptance:** Fresh clone + install + run works with no manual steps beyond setting `ANTHROPIC_API_KEY`.
+**Acceptance:** Fresh clone + install + run works with no manual steps beyond setting `GROQ_API_KEY`.
 
 ---
 
@@ -70,11 +70,11 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 ## Phase 4 — Recommendation Engine (LLM Integration)
 
-**Goal:** Replace the stub with real Claude-generated ranking and explanations.
+**Goal:** Replace the stub with real Groq-generated ranking and explanations.
 
 - `src/recommendation/prompts.py`: build the system prompt (role, ranking criteria, "only use the provided list" grounding instruction, output contract) and the per-request user message (serialized candidate set + preferences), per [architecture.md §4.5](architecture.md#45-recommendation-engine-llm-call).
 - `src/recommendation/engine.py`:
-  - Call `client.messages.create(...)` (or `.parse()`) with `model="claude-opus-5"`, `thinking: {type: "adaptive"}`, `output_config: {effort: "medium", format: {...}}` per the JSON schema in architecture.md.
+  - Call `client.chat.completions.create(...)` (Groq's OpenAI-compatible Chat Completions API) with `model="openai/gpt-oss-120b"`, `reasoning_effort="medium"`, `response_format={"type": "json_schema", "json_schema": {...}}` per the JSON schema in architecture.md. Keep the model name in `src/config.py` so switching to `qwen/qwen3-32b` (documented alternative) is a one-line change.
   - Validate the response against the expected schema.
   - On failure (API error, schema mismatch, timeout): fall back to the Phase 3 stub (sorted-by-rating list), and mark the response so the frontend can label it "sorted by rating" instead of "AI-recommended" (per [architecture.md §4.6](architecture.md#46-output-display)).
 - Wire `engine.py` into the `/recommendations` endpoint, replacing the Phase 3 stub.
@@ -104,10 +104,10 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 **Goal:** Confidence the system behaves correctly and degrades gracefully.
 
-- `tests/test_engine.py`: mock the Anthropic client — test prompt construction, schema validation, and fallback-on-failure behavior without making real API calls.
+- `tests/test_engine.py`: mock the Groq client — test prompt construction, schema validation, and fallback-on-failure behavior without making real API calls.
 - Small fixed eval set (5–10 representative queries) to sanity-check explanation quality doesn't regress after prompt changes — informal at this stage, formal eval tooling is a later enhancement.
 - Basic error-path tests: malformed input, empty dataset match, LLM timeout/error simulation.
-- Review cost/latency in practice: confirm candidate-set cap is effective, check actual token usage via `response.usage`, confirm prompt caching is hitting (`cache_read_input_tokens` > 0 on repeat system-prompt calls).
+- Review cost/latency in practice: confirm candidate-set cap is effective, check actual token usage via `response.usage`, and confirm `reasoning_effort` is actually set to `"medium"` (not silently defaulting higher) on outgoing requests.
 
 **Deliverable:** Test suite covering filters, API contract, and engine fallback paths.
 **Acceptance:** `pytest` passes; a manual run with a bad/missing API key still produces a usable (fallback) response end-to-end.
@@ -120,7 +120,7 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 - Dockerize the backend (single container running ingestion-at-build-or-startup + FastAPI).
 - Decide and document the deployment target (per the open question in architecture.md §8).
-- Environment/secrets handling for `ANTHROPIC_API_KEY` in the target environment.
+- Environment/secrets handling for `GROQ_API_KEY` in the target environment.
 - Smoke test against the deployed instance (same acceptance checks as Phase 5/6, run remotely).
 
 **Deliverable:** Publicly or internally reachable running instance.

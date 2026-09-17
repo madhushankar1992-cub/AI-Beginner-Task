@@ -3,5 +3,5 @@ uvicorn[standard]
 pydantic
 pandas
 datasets
-anthropic
+groq
 pytest

@@ -23,10 +23,10 @@ This document defines the technical architecture for the Zomato-inspired restaur
 ## 2. High-Level Architecture
 
 ```
-┌─────────────┐      ┌──────────────────┐      ┌───────────────────────┐      ┌──────────────┐
-│   Frontend   │─────▶│   API Layer       │─────▶│   Integration Layer    │─────▶│  LLM (Claude) │
-│ (Web UI)     │◀─────│ (FastAPI backend) │◀─────│ (filter + prompt build)│◀─────│  Messages API │
-└─────────────┘      └──────────────────┘      └───────────┬───────────┘      └──────────────┘
+┌─────────────┐      ┌──────────────────┐      ┌───────────────────────┐      ┌────────────────────┐
+│   Frontend   │─────▶│   API Layer       │─────▶│   Integration Layer    │─────▶│  LLM (Groq)         │
+│ (Web UI)     │◀─────│ (FastAPI backend) │◀─────│ (filter + prompt build)│◀─────│  Chat Completions   │
+└─────────────┘      └──────────────────┘      └───────────┬───────────┘      └────────────────────┘
                                                              │
                                                              ▼
                                                   ┌───────────────────────┐
@@ -45,8 +45,8 @@ This document defines the technical architecture for the Zomato-inspired restaur
 1. User submits preferences via the frontend.
 2. API layer validates input and calls the integration layer.
 3. Integration layer filters the dataset down to a candidate set (structured, deterministic — no LLM involved yet).
-4. Integration layer builds a prompt containing only the candidate set + user preferences, sends it to Claude.
-5. Claude ranks, explains, and optionally summarizes.
+4. Integration layer builds a prompt containing only the candidate set + user preferences, sends it to the LLM (Groq).
+5. The LLM ranks, explains, and optionally summarizes.
 6. API layer parses the structured LLM response and returns it to the frontend.
 7. Frontend renders the recommendation cards.
 
@@ -58,8 +58,8 @@ This document defines the technical architecture for the Zomato-inspired restaur
 |---|---|---|
 | Data ingestion | Python + `datasets` (Hugging Face) + `pandas` | Native loader for the target dataset; pandas for cleaning/filtering |
 | Data store | Parquet/CSV file (or SQLite for query convenience) loaded into memory at startup | Dataset is static and small enough (~thousands of rows) that a full DB server is unnecessary |
-| Backend API | Python + FastAPI | Async-friendly, typed request/response models via Pydantic, pairs naturally with the Anthropic Python SDK |
-| LLM provider | Anthropic Claude via the official `anthropic` Python SDK | Required capability: reasoning + ranking + natural-language explanation |
+| Backend API | Python + FastAPI | Async-friendly, typed request/response models via Pydantic |
+| LLM provider | Groq via the official `groq` Python SDK (OpenAI-compatible Chat Completions API) | Fast open-weight inference; `openai/gpt-oss-120b` (primary) and `qwen/qwen3-32b` (alternative) both support structured JSON output and a `reasoning_effort` control |
 | Frontend | React (or Streamlit for a faster MVP) | React for a production-quality UI; Streamlit if the priority is a quick working demo |
 | Deployment | Containerized (Docker), single service for MVP | Keeps ingestion, API, and prompt logic in one deployable unit initially |
 
@@ -123,9 +123,9 @@ If the team already has a preferred stack (Node backend, different frontend fram
 
 ### 4.5 Recommendation Engine (LLM Call)
 
-**Model:** `claude-opus-5` via the Anthropic Messages API (`client.messages.create` / `client.messages.parse`).
+**Model:** `openai/gpt-oss-120b` via Groq's OpenAI-compatible Chat Completions API (`client.chat.completions.create`), with `qwen/qwen3-32b` documented as a drop-in alternative model id if cost/quality/availability trade-offs favor it.
 
-- **Structured output:** Use `output_config.format` (or `client.messages.parse()`) with a JSON schema like:
+- **Structured output:** Use `response_format={"type": "json_schema", "json_schema": {...}}` with a schema like:
 
 ```json
 {
@@ -145,12 +145,12 @@ If the team already has a preferred stack (Node backend, different frontend fram
   This removes the need for fragile free-text parsing and guarantees the API layer gets a shape it can render directly.
 
 - **Prompt design principles:**
-  - System prompt: fixed instructions (role, ranking criteria, "ground truth only" constraint, output contract). This is the stable prefix — good candidate for prompt caching since it doesn't change per request.
-  - User message: candidate restaurant list (structured) + user preferences (the volatile part, placed after any cache breakpoint).
+  - System prompt: fixed instructions (role, ranking criteria, "ground truth only" constraint, output contract). This is the stable prefix and should stay identical across requests.
+  - User message: candidate restaurant list (structured) + user preferences (the volatile part).
   - Explicitly instruct the model to weigh rating, budget fit, cuisine match, and any free-text preferences (e.g., "family-friendly") using the `tags`/description fields in the data.
-- **Thinking/effort:** Default `thinking: {type: "adaptive"}`; `output_config.effort: "medium"` is likely sufficient — this is a ranking/summarization task, not deep multi-step reasoning, so don't default to `high`/`xhigh` without evidence it's needed.
-- **Prompt caching:** Cache the system prompt (and, if candidate lists repeat across users for the same location/cuisine/budget combo, consider caching that combination's candidate block) to cut cost on repeated queries.
-- **Error handling:** If the LLM call fails (rate limit, timeout) or returns output that doesn't validate against the schema, fall back to a plain sorted-by-rating list from the filtered candidates so the user always gets a usable result.
+- **Reasoning effort:** Both `openai/gpt-oss-120b` and `qwen/qwen3-32b` support a `reasoning_effort` parameter (`"low"` / `"medium"` / `"high"`). Default to `"medium"` — this is a ranking/summarization task, not deep multi-step reasoning, so don't raise it without evidence it's needed.
+- **Cost/latency:** Groq's inference is fast enough that prompt-level caching isn't the primary lever here (unlike providers with explicit cache-read pricing); the main cost control is keeping the candidate-set cap small (§4.4) and not over-provisioning `reasoning_effort`.
+- **Error handling:** If the LLM call fails (rate limit, timeout, auth error) or returns output that doesn't validate against the schema, fall back to a plain sorted-by-rating list from the filtered candidates so the user always gets a usable result.
 
 ### 4.6 Output Display
 
@@ -171,7 +171,7 @@ User preferences ──▶ API layer ──▶ filter (pandas query) ──▶ c
                                                      prompt (system + candidates + prefs)
                                                                     │
                                                                     ▼
-                                                        Claude (claude-opus-5, structured output)
+                                                Groq (openai/gpt-oss-120b, structured output)
                                                                     │
                                                                     ▼
                                                      validated JSON ──▶ API response ──▶ UI cards
@@ -198,7 +198,7 @@ NXT LEAP/
 │   ├── recommendation/
 │   │   ├── filters.py               # structured filtering logic
 │   │   ├── prompts.py               # prompt templates
-│   │   └── engine.py                # Claude API call + response parsing
+│   │   └── engine.py                # Groq API call + response parsing
 │   └── config.py                    # model name, API key handling, thresholds
 ├── frontend/
 │   └── ...                          # React or Streamlit app
@@ -211,11 +211,11 @@ NXT LEAP/
 
 ## 7. Non-Functional Considerations
 
-- **Cost control:** Cap candidate-set size sent to the LLM; cache the stable system prompt; use `medium` effort by default and measure before raising it.
-- **Latency:** Single non-streaming Claude call per request is acceptable for this use case (interactive, not agentic/multi-turn); switch to streaming only if response times become noticeable in the UI.
+- **Cost control:** Cap candidate-set size sent to the LLM; use `reasoning_effort: "medium"` by default and measure before raising it.
+- **Latency:** Single non-streaming Groq call per request is acceptable for this use case (interactive, not agentic/multi-turn); Groq's inference speed gives headroom here even without streaming. Switch to streaming only if response times become noticeable in the UI.
 - **Reliability:** Deterministic filtering is the source of truth for *which restaurants exist* in the result; the LLM only ranks/explains within that set — this bounds hallucination risk to explanations, not fabricated restaurants.
-- **Testability:** Filtering logic is pure and unit-testable without hitting the LLM. LLM-dependent tests should mock the Anthropic client or use a small fixed eval set to check explanation quality doesn't regress.
-- **Config/secrets:** `ANTHROPIC_API_KEY` via environment variable, never hardcoded.
+- **Testability:** Filtering logic is pure and unit-testable without hitting the LLM. LLM-dependent tests should mock the Groq client or use a small fixed eval set to check explanation quality doesn't regress.
+- **Config/secrets:** `GROQ_API_KEY` via environment variable, never hardcoded.
 
 ---
 
