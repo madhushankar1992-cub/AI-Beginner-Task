@@ -60,7 +60,7 @@ This document defines the technical architecture for the Zomato-inspired restaur
 | Data store | Parquet/CSV file (or SQLite for query convenience) loaded into memory at startup | Dataset is static and small enough (~thousands of rows) that a full DB server is unnecessary |
 | Backend API | Python + FastAPI | Async-friendly, typed request/response models via Pydantic |
 | LLM provider | Groq via the official `groq` Python SDK (OpenAI-compatible Chat Completions API) | Fast open-weight inference; `openai/gpt-oss-120b` (primary) and `qwen/qwen3-32b` (alternative) both support structured JSON output and a `reasoning_effort` control |
-| Frontend | React (or Streamlit for a faster MVP) | React for a production-quality UI; Streamlit if the priority is a quick working demo |
+| Frontend | Streamlit | Pure Python — no separate Node.js/npm toolchain needed; fastest path to a working demo UI (§8) |
 | Deployment | Containerized (Docker), single service for MVP | Keeps ingestion, API, and prompt logic in one deployable unit initially |
 
 If the team already has a preferred stack (Node backend, different frontend framework, existing DB), swap the equivalent component — the layer boundaries below don't depend on this specific stack.
@@ -201,7 +201,7 @@ NXT LEAP/
 │   │   └── engine.py                # Groq API call + response parsing
 │   └── config.py                    # model name, API key handling, thresholds
 ├── frontend/
-│   └── ...                          # React or Streamlit app
+│   └── app.py                       # Streamlit app (calls POST /recommendations)
 └── tests/
     ├── test_filters.py
     └── test_engine.py               # mock the LLM call
@@ -221,7 +221,7 @@ NXT LEAP/
 
 ## 8. Open Questions / Decisions Needed
 
-- Frontend framework: React (production-grade) vs. Streamlit (fastest to demo)?
+- ~~Frontend framework: React (production-grade) vs. Streamlit (fastest to demo)?~~ **Resolved (Phase 5): Streamlit** — pure Python, no Node.js/npm toolchain needed on top of the existing backend stack.
 - Data store: flat file/pandas vs. SQLite vs. a real DB — depends on expected dataset size and whether filters need to get more complex later.
 - Deployment target (local only, cloud VM, containers on a PaaS)?
 - Whether "additional preferences" (family-friendly, quick service) map to actual dataset fields/tags or are purely inferred by the LLM from restaurant descriptions — affects how much the integration layer vs. the LLM does the matching.

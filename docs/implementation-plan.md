@@ -89,7 +89,7 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 **Goal:** User-facing UI consuming the API.
 
-- Scaffold frontend (React or Streamlit — resolve the [open question in architecture.md §8](architecture.md#8-open-questions--decisions-needed) before starting this phase).
+- Scaffold frontend: Streamlit (per the [resolved decision in architecture.md §8](architecture.md#8-open-questions--decisions-needed) — pure Python, no Node.js/npm toolchain needed).
 - Preference input form: location, budget, cuisine (multi-select), minimum rating, free-text/tag preferences.
 - Results view: recommendation cards (Name, Cuisine, Rating, Estimated Cost, AI explanation) + summary line.
 - States: loading, empty-results, error/fallback (labeled distinctly per §4.6), happy path.
@@ -143,6 +143,6 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 ## Open Decisions Blocking Specific Phases
 
-- Frontend framework choice blocks the start of Phase 5.
+- ~~Frontend framework choice blocks the start of Phase 5.~~ Resolved: Streamlit.
 - Data store choice (pandas vs. SQLite) should be confirmed before Phase 2 if dataset size or filter complexity turns out larger than expected during Phase 1's ingestion report.
 - Deployment target blocks Phase 7.
