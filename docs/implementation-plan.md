@@ -118,13 +118,13 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 **Goal:** Runnable outside the dev machine.
 
-- Dockerize the backend (single container running ingestion-at-build-or-startup + FastAPI).
-- Decide and document the deployment target (per the open question in architecture.md §8).
-- Environment/secrets handling for `GROQ_API_KEY` in the target environment.
-- Smoke test against the deployed instance (same acceptance checks as Phase 5/6, run remotely).
+- Dockerize the backend (single container, `Dockerfile` at repo root): ingestion runs at **build time** (bakes a deterministic `data/restaurants.parquet` into the image) rather than at container startup, so the running container never depends on Hugging Face being reachable — the trade-off is that `docker build` itself needs network access.
+- Deployment target resolved (per [architecture.md §8](architecture.md#8-open-questions--decisions-needed)): **local Docker / self-hosted container.** Docker isn't installed on the dev machine used to build this project and no cloud account/credentials were available in that environment, so this phase produced and reviewed the `Dockerfile` and `.dockerignore` but did not build-test the image or perform a live deploy — do that (`docker build` / `docker run`, below) once Docker is available, and treat a cloud PaaS as a later option once credentials exist (the image is portable to one).
+- `GROQ_API_KEY` is passed at `docker run` time via `-e` (or `--env-file`), never baked into the image — `.dockerignore` excludes `.env`/`.env.example` from the build context.
+- Smoke test (once Docker is available): `docker build -t restaurant-recommender .` then `docker run -p 8000:8000 -e GROQ_API_KEY=... restaurant-recommender`, then run the same acceptance checks as Phase 5/6 against `http://localhost:8000`.
 
-**Deliverable:** Publicly or internally reachable running instance.
-**Acceptance:** Fresh deploy from a clean environment serves working recommendations without manual post-deploy fixes.
+**Deliverable:** `Dockerfile` producing a runnable backend image; deployment target decision documented.
+**Acceptance:** *Partially met in this environment* — the image is written to satisfy "fresh deploy from a clean environment serves working recommendations without manual post-deploy fixes" (build-time ingestion, env-var-only secrets, no host-specific paths), but this hasn't been verified with an actual `docker build`/`docker run` since Docker isn't installed here. Full acceptance requires that build+run smoke test.
 
 ---
 
@@ -145,4 +145,4 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 - ~~Frontend framework choice blocks the start of Phase 5.~~ Resolved: Streamlit.
 - Data store choice (pandas vs. SQLite) should be confirmed before Phase 2 if dataset size or filter complexity turns out larger than expected during Phase 1's ingestion report.
-- Deployment target blocks Phase 7.
+- ~~Deployment target blocks Phase 7.~~ Resolved: local Docker / self-hosted container (build-test still pending — see Phase 7).

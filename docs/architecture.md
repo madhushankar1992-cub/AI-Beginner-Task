@@ -223,5 +223,5 @@ NXT LEAP/
 
 - ~~Frontend framework: React (production-grade) vs. Streamlit (fastest to demo)?~~ **Resolved (Phase 5): Streamlit** — pure Python, no Node.js/npm toolchain needed on top of the existing backend stack.
 - Data store: flat file/pandas vs. SQLite vs. a real DB — depends on expected dataset size and whether filters need to get more complex later.
-- Deployment target (local only, cloud VM, containers on a PaaS)?
+- ~~Deployment target (local only, cloud VM, containers on a PaaS)?~~ **Resolved (Phase 7): local Docker / self-hosted container** — see `Dockerfile` at the repo root. Docker isn't installed on the dev machine used for this project and no cloud account/credentials were available, so the image was written and reviewed but not build-tested in this environment; a cloud PaaS target remains a reasonable later choice (the container is portable to one) once credentials are available.
 - Whether "additional preferences" (family-friendly, quick service) map to actual dataset fields/tags or are purely inferred by the LLM from restaurant descriptions — affects how much the integration layer vs. the LLM does the matching.
