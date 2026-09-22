@@ -64,6 +64,15 @@ def test_no_match_returns_empty_dataframe_not_error(store):
     assert result.empty
 
 
+def test_unmatched_location_with_cuisine_filter_returns_empty_dataframe(store):
+    # Regression: an empty intermediate frame plus a cuisine filter used to
+    # drop every column and raise KeyError: 'rating'.
+    result = filter_restaurants(store, location="Nonexistent City", cuisine=["chinese"], min_rating=3.0)
+    assert isinstance(result, pd.DataFrame)
+    assert result.empty
+    assert "name" in result.columns
+
+
 def test_partial_cuisine_any_match(store):
     # "thai" matches only Spice Elephant; "italian" matches nobody in the store.
     result = filter_restaurants(store, cuisine=["thai", "italian"])

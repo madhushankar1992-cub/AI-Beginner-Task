@@ -60,7 +60,7 @@ This document defines the technical architecture for the Zomato-inspired restaur
 | Data store | Parquet/CSV file (or SQLite for query convenience) loaded into memory at startup | Dataset is static and small enough (~thousands of rows) that a full DB server is unnecessary |
 | Backend API | Python + FastAPI | Async-friendly, typed request/response models via Pydantic |
 | LLM provider | Groq via the official `groq` Python SDK (OpenAI-compatible Chat Completions API) | Fast open-weight inference; `openai/gpt-oss-120b` (primary) and `qwen/qwen3-32b` (alternative) both support structured JSON output and a `reasoning_effort` control |
-| Frontend | Streamlit | Pure Python — no separate Node.js/npm toolchain needed; fastest path to a working demo UI (§8) |
+| Frontend | Streamlit (`frontend/app.py`) **and** a static HTML/CSS/JS UI (`frontend/web/`) | Streamlit per §8's resolved decision (pure Python, fastest demo path); `frontend/web/` was added afterward as a richer, custom-themed UI built from a Claude Design canvas — both call the same `POST /recommendations` endpoint independently, and either can be run on its own |
 | Deployment | Containerized (Docker), single service for MVP | Keeps ingestion, API, and prompt logic in one deployable unit initially |
 
 If the team already has a preferred stack (Node backend, different frontend framework, existing DB), swap the equivalent component — the layer boundaries below don't depend on this specific stack.
@@ -107,6 +107,7 @@ If the team already has a preferred stack (Node backend, different frontend fram
 
 - Pydantic model validates shape and types.
 - Basic guardrails: reject empty location, clamp `min_rating` to [0, 5].
+- **CORS:** `frontend/web/` is a static UI served from its own origin (e.g. `http://localhost:3000`) making browser-side `fetch` calls, so the API needs `CORSMiddleware` enabled for that origin — `src/config.py`'s `CORS_ALLOW_ORIGINS` (env-overridable) controls the allow-list. Streamlit's frontend doesn't need this: it calls the API server-side, not from browser JS.
 
 ### 4.4 Integration Layer
 
@@ -157,6 +158,7 @@ If the team already has a preferred stack (Node backend, different frontend fram
 - Frontend renders each recommendation as a card: Name, Cuisine, Rating (stars), Estimated Cost, AI explanation.
 - Show the optional `summary` above the list.
 - Empty-state and error-state messaging (no matches / LLM unavailable → fallback list, clearly labeled as "sorted by rating" rather than "AI-recommended").
+- Two independent implementations of this contract exist: `frontend/app.py` (Streamlit) and `frontend/web/` (static HTML/CSS/JS, vanilla — no build step, no framework). Both render the same four states (AI success, empty/no-match, fallback, error) distinctly. `frontend/web/` renders every API/LLM-provided string via `textContent`/DOM text nodes, never `innerHTML`, so a hostile or malformed LLM response can't inject markup or script.
 
 ---
 
@@ -201,10 +203,18 @@ NXT LEAP/
 │   │   └── engine.py                # Groq API call + response parsing
 │   └── config.py                    # model name, API key handling, thresholds
 ├── frontend/
-│   └── app.py                       # Streamlit app (calls POST /recommendations)
+│   ├── app.py                       # Streamlit app (calls POST /recommendations)
+│   └── web/                         # static HTML/CSS/JS UI (no build step)
+│       ├── index.html
+│       ├── styles.css
+│       ├── app.js                   # fetch() to the API; renders all API text as textContent
+│       └── options.js               # static snapshot of location/cuisine values for the form
+│                                    # (python -m http.server 3000 --directory frontend/web;
+│                                    #  needs the API's CORS_ALLOW_ORIGINS to include its origin)
 └── tests/
     ├── test_filters.py
-    └── test_engine.py               # mock the LLM call
+    ├── test_engine.py               # mock the LLM call
+    └── test_api.py                  # API contract + CORS preflight, mocked engine/store
 ```
 
 ---
@@ -216,6 +226,7 @@ NXT LEAP/
 - **Reliability:** Deterministic filtering is the source of truth for *which restaurants exist* in the result; the LLM only ranks/explains within that set — this bounds hallucination risk to explanations, not fabricated restaurants.
 - **Testability:** Filtering logic is pure and unit-testable without hitting the LLM. LLM-dependent tests should mock the Groq client or use a small fixed eval set to check explanation quality doesn't regress.
 - **Config/secrets:** `GROQ_API_KEY` via environment variable, never hardcoded.
+- **XSS safety:** `frontend/web/` treats every field in the API response as untrusted text (it ultimately originates from an LLM), rendering it via `textContent`/text nodes rather than `innerHTML` — verified directly by feeding the UI a mocked response containing `<script>`/`onerror` payloads and confirming nothing executed.
 
 ---
 

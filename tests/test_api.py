@@ -90,6 +90,15 @@ def test_unknown_location_returns_empty_not_500(client):
     assert body["source"] == "fallback"
 
 
+def test_unknown_location_with_cuisine_filter_returns_empty_not_500(client):
+    resp = client.post(
+        "/recommendations",
+        json={"location": "Nowhereville", "cuisine": ["north indian"], "budget": "medium", "min_rating": 4.0},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["recommendations"] == []
+
+
 def test_unknown_location_skips_llm_call_entirely(client, monkeypatch):
     mock_generate = MagicMock()
     monkeypatch.setattr(main, "generate_recommendations", mock_generate)
@@ -138,3 +147,24 @@ def test_engine_failure_falls_back_to_sorted_by_rating(client, monkeypatch):
     assert len(body["recommendations"]) == 1
     assert body["recommendations"][0]["name"] == "Jalsa"
     assert "sorted by rating" in body["summary"].lower()
+
+
+def test_cors_preflight_allows_the_frontend_origin(client):
+    resp = client.options(
+        "/recommendations",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_cors_preflight_rejects_unknown_origins(client):
+    resp = client.options(
+        "/recommendations",
+        headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"},
+    )
+    assert "access-control-allow-origin" not in resp.headers

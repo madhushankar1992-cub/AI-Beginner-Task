@@ -26,11 +26,13 @@ def filter_restaurants(
     if cuisine:
         wanted = {c.strip().lower() for c in cuisine if c and c.strip()}
         if wanted:
-            df = df[
-                df["cuisine"].apply(
-                    lambda row_cuisines: bool(wanted & {str(c).lower() for c in row_cuisines})
-                )
-            ]
+            # astype(bool): .apply() on an already-empty frame returns an empty
+            # object-dtype Series, which pandas would treat as a column selector
+            # (dropping every column) instead of a boolean mask.
+            has_wanted_cuisine = df["cuisine"].apply(
+                lambda row_cuisines: bool(wanted & {str(c).lower() for c in row_cuisines})
+            ).astype(bool)
+            df = df[has_wanted_cuisine]
 
     df = df[df["rating"] >= min_rating]
 

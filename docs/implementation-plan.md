@@ -98,6 +98,8 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 **Deliverable:** Clickable UI, no manual API calls needed to use the product.
 **Acceptance:** A user can fill the form, submit, and see rendered recommendation cards; empty and fallback states are visually distinguishable from normal AI results.
 
+**Addendum (post-Phase-5):** a second frontend, `frontend/web/`, was added later as a static HTML/CSS/JS UI (no build step) implementing a custom design built via a Claude Design canvas. It satisfies the same acceptance criteria independently of Streamlit and calls the same `POST /recommendations` endpoint via browser-side `fetch`, which required adding CORS support (`CORSMiddleware` + `CORS_ALLOW_ORIGINS` in `src/config.py`) to the API — not anticipated in the original Phase 3/4 API design, since Streamlit doesn't need it. Both frontends are independent and either can be run without the other.
+
 ---
 
 ## Phase 6 — Testing & Hardening
@@ -111,6 +113,8 @@ Each phase produces a working, demo-able increment. Later phases assume earlier 
 
 **Deliverable:** Test suite covering filters, API contract, and engine fallback paths.
 **Acceptance:** `pytest` passes; a manual run with a bad/missing API key still produces a usable (fallback) response end-to-end.
+
+**Addendum:** `tests/test_api.py` (mocked store/engine, FastAPI `TestClient`) covers the API contract directly — input validation, the no-match short-circuit, the AI/fallback response shapes — plus CORS preflight behavior (`frontend/web/`'s origin is allowed; an unlisted origin is not) added alongside Phase 5's addendum. 42 tests pass as of this writing.
 
 ---
 

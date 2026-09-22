@@ -2,7 +2,9 @@ import logging
 
 import pandas as pd
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from src import config
 from src.api.models import RecommendationItem, RecommendationRequest, RecommendationResponse
 from src.api.store import get_store
 from src.recommendation.engine import EngineError, generate_recommendations
@@ -11,6 +13,13 @@ from src.recommendation.filters import filter_restaurants
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.CORS_ALLOW_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 @app.get("/health")

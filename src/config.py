@@ -22,3 +22,13 @@ GROQ_RPM_LIMIT = 30
 GROQ_RPD_LIMIT = 1_000
 GROQ_TPM_LIMIT = 8_000
 GROQ_TPD_LIMIT = 200_000
+
+# Browser origins allowed to call the API (the static frontend in
+# frontend/web is served from a different origin than the API).
+CORS_ALLOW_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
+]
